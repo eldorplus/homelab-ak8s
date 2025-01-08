@@ -1,0 +1,41 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: pyspark1
+  namespace: default
+spec:
+  type: Python
+  mode: cluster
+  image: harbor.home.lab/homelab/spark:3.5.3
+  imagePullPolicy: Always
+  mainClass: 
+  mainApplicationFile: local:///opt/spark/homelab/my.py
+  hadoopConf:
+    "fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem"
+  driver:
+    cores: 1
+    coreLimit: "1200m"
+    memory: "512m"
+    envFrom:
+      - configMapRef:
+          name: ceph-bucket
+      - secretRef:
+          name: ceph-bucket
+    configMaps:
+      - name: cabundle
+        path: /etc/ssl/certs
+    serviceAccount: spark-operator-spark
+  executor:
+    cores: 1
+    instances: 2
+    memory: "512m"
+    envFrom:
+      - configMapRef:
+          name: ceph-bucket
+      - secretRef:
+          name: ceph-bucket
+    configMaps:
+      - name: cabundle
+        path: /etc/ssl/certs
+    javaOptions: "$JAVA_OPS -Dcom.amazonaws.sdk.disableCertChecking=true"
+  volumes:

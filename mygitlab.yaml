@@ -1,0 +1,84 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitlab-tls
+  namespace: gitlab-system
+spec:
+  secretName: gitlab-system
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - homelab
+      - jetstack
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - gitlab.home.lab
+  ipAddresses:
+    - 10.10.0.37
+  issuerRef:
+    name: ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: apps.gitlab.com/v1beta1
+kind: GitLab
+metadata:
+  name: gitlab
+  namespace: gitlab-system
+spec:
+  chart:
+    version: "8.6.2"
+    values:
+      global:
+        hosts:
+          domain: home.lab
+          externalIP: 10.10.0.37
+          gitlab:
+            name: gitlab.home.lab
+            https: true
+          ssh: gitlab.home.lab
+        ingress:
+          configureCertmanager: false
+        certificates:
+          customCAs:
+            - secret: homelab
+      certmanager:
+        install: false
+      nginx-ingress:
+        enabled: false
+      gitlab:
+        webservice:
+          ingress:
+            tls:
+              secretName: gitlab-tls
+          
+# ---
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: gitlab-runner-secret
+#   namespace: gitlab-system
+# type: Opaque
+# # Only one of the following fields can be set. The Operator fails to register the runner if both are provided.
+# # NOTE: runner-registration-token is deprecated and will be removed in GitLab 18.0. You should use runner-token instead.
+# stringData:
+#   runner-token: REPLACE_ME # your project runner token
+#   # runner-registration-token: "" # your project runner secret
+# ---
+# apiVersion: apps.gitlab.com/v1beta2
+# kind: Runner
+# metadata:
+#   name: gitlab-runner
+#   namespace: gitlab-system
+# spec:
+#   gitlabUrl: https://gitlab.home.lab
+#   buildImage: alpine
+#   token: gitlab-runner-secret

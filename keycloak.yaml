@@ -152,6 +152,6 @@ spec:
           secretName: kc-home-lab-tls
       - name: truststore
         configMap:
-          name: "home.lab"
+          name: "homelab"
 
           

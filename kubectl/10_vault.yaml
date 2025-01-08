@@ -19,3 +19,106 @@
       release_namespace: vault
       chart_ref: hashicorp/vault
       update_repo_cache: true
+      values:
+        global:
+          enabled: true
+          tlsDisable: false
+        injector:
+          enabled: false
+        server:
+          service:
+            type: "LoadBalancer"
+            annotations:
+              metallb.universe.tf/loadBalancerIPs: 10.10.0.40
+              metallb.universe.tf/ip-allocated-from-pool: default-pool
+          dataStorage:
+            enabled: true
+          auditStorage:
+            enabled: true
+          ha:
+            enabled: true
+            replicas: 3
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+                cluster_name = "homelab-vault"
+                listener "tcp" {
+                  address = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                  tls_cert_file = "/vault/userconfig/tls-server/tls.crt"
+                  tls_key_file = "/vault/userconfig/tls-server/tls.key"
+                }
+                storage "raft" {
+                  path = "/vault/data"
+                  retry_join {
+                    leader_api_addr = "https://hashicorp-vault-0.hashicorp-vault-internal:8200"
+                    leader_ca_cert_file = "/vault/userconfig/tls-server/ca.crt"
+                    leader_client_cert_file = "/vault/userconfig/tls-server/tls.crt"
+                    leader_client_key_file = "/vault/userconfig/tls-server/tls.key"
+                  }
+                  retry_join {
+                    leader_api_addr = "https://hashicorp-vault-1.hashicorp-vault-internal:8200"
+                    leader_ca_cert_file = "/vault/userconfig/tls-server/ca.crt"
+                    leader_client_cert_file = "/vault/userconfig/tls-server/tls.crt"
+                    leader_client_key_file = "/vault/userconfig/tls-server/tls.key"
+                  }
+                  retry_join {
+                    leader_api_addr = "https://hashicorp-vault-2.hashicorp-vault-internal:8200"
+                    leader_ca_cert_file = "/vault/userconfig/tls-server/ca.crt"
+                    leader_client_cert_file = "/vault/userconfig/tls-server/tls.crt"
+                    leader_client_key_file = "/vault/userconfig/tls-server/tls.key"
+                  }
+                } 
+          standalone:
+            enabled: false
+          readinessProbe:
+            enabled: true
+            path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
+          livenessProbe:
+            enabled: true
+            path: "/v1/sys/health?standbyok=true"
+            initialDelaySeconds: 60
+          extraEnvironmentVars:
+            VAULT_CACERT: /vault/userconfig/tls-server/ca.crt
+            VAULT_CLIENT_CERT: /vault/userconfig/tls-server/tls.crt
+            VAULT_CLIENT_KEY: /vault/userconfig/tls-server/tls.key
+          volumes:
+            - name: tls
+              csi:
+                driver: csi.cert-manager.io
+                readOnly: true
+                volumeAttributes:
+                  csi.cert-manager.io/issuer-name: ca-issuer
+                  csi.cert-manager.io/dns-names: ${POD_NAME}.hashicorp-vault-internal,vault.home.lab
+                  csi.cert-manager.io/ip-sans: "127.0.0.1"
+                  csi.cert-manager.io/issuer-kind: ClusterIssuer
+                  csi.cert-manager.io/fs-group: "1000"
+          volumeMounts:
+            - name: tls
+              mountPath: "/vault/userconfig/tls-server"
+  - name: wait for trust-manager
+    ansible.builtin.wait_for:
+      timeout: 20                
+  - name: init and unseal vault
+    ansible.builtin.shell: |
+      export VAULT_K8S_NAMESPACE=vault
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-0 -- vault operator init > cluster-keys.json
+      export VAULT_UNSEAL_KEY1=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[0]")
+      export VAULT_UNSEAL_KEY2=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[1]")
+      export VAULT_UNSEAL_KEY3=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[2]")
+      export VAULT_UNSEAL_KEY4=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[3]")
+      export VAULT_UNSEAL_KEY5=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[4]")
+      export CLUSTER_ROOT_TOKEN=$(cat cluster-keys.json | jq -r ".root_token")
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-0 -- vault operator unseal -address=https://hashicorp-vault-0.vault-internal:8200 $VAULT_UNSEAL_KEY1
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-0 -- vault operator unseal -address=https://hashicorp-vault-0.vault-internal:8200 $VAULT_UNSEAL_KEY2
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-0 -- vault operator unseal -address=https://hashicorp-vault-0.vault-internal:8200 $VAULT_UNSEAL_KEY3
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-1 -- vault operator raft join -address=https://hashicorp-vault-1.vault-internal:8200 -leader-ca-cert=@/vault/userconfig/tls-server/ca.crt -leader-client-cert=@/vault/userconfig/tls-server/tls.crt -leader-client-key=@/vault/userconfig/tls-server/tls.key https://hashicorp-vault-0.hashicorp-vault-internal:8200
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-1 -- vault operator unseal -address=https://hashicorp-vault-1.vault-internal:8200 $VAULT_UNSEAL_KEY1
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-1 -- vault operator unseal -address=https://hashicorp-vault-1.vault-internal:8200 $VAULT_UNSEAL_KEY2
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-1 -- vault operator unseal -address=https://hashicorp-vault-1.vault-internal:8200 $VAULT_UNSEAL_KEY3
+      kubectl exec -n $VAULT_K8S_NAMESPACE hashicorp-vault-2 -- vault operator raft join -address=https://hashicorp-vault-2.vault-internal:8200 -leader-ca-cert=@/vault/userconfig/tls-server/ca.crt -leader-client-cert=@/vault/userconfig/tls-server/tls.crt -leader-client-key=@/vault/userconfig/tls-server/tls.key https://hashicorp-vault-0.hashicorp-vault-internal:8200
+      kubectl exec -n $VAULT_K8S_NAMESPACEhashicorp-vault-2 -- vault operator unseal -address=https://hashicorp-vault-2.vault-internal:8200 $VAULT_UNSEAL_KEY1
+      kubectl exec -n $VAULT_K8S_NAMESPACEhashicorp-vault-2 -- vault operator unseal -address=https://hashicorp-vault-2.vault-internal:8200 $VAULT_UNSEAL_KEY2
+      kubectl exec -n $VAULT_K8S_NAMESPACEhashicorp-vault-2 -- vault operator unseal -address=https://hashicorp-vault-2.vault-internal:8200 $VAULT_UNSEAL_KEY3

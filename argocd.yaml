@@ -7,10 +7,10 @@ metadata:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: my-argocd-tls
+  name: argocd-tls
   namespace: argocd
 spec:
-  secretName: my-argocd-tls
+  secretName: argocd-tls
   duration: 2160h # 90d
   renewBefore: 360h # 15d
   subject:

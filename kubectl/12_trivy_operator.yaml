@@ -5,8 +5,8 @@
   tasks:
   - name: add aqua helm repo
     kubernetes.core.helm_repository:
-      name: gitea
-      repo_url: https://dl.gitea.com/charts/
+      name: aqua
+      repo_url: https://aquasecurity.github.io/helm-charts/
     ignore_errors: true
   - name: create trivy namespace
     kubernetes.core.k8s:

@@ -61,7 +61,7 @@
         apiVersion: trust.cert-manager.io/v1alpha1
         kind: Bundle
         metadata:
-          name: home.lab
+          name: homelab
         spec:
           sources:
           - useDefaultCAs: true
@@ -70,7 +70,7 @@
               key: "tls.crt"
           target:
             configMap:
-              key: "root-certs.pem"
+              key: "ca.pem"
             additionalFormats:
               jks:
                 key: "bundle.jks"
