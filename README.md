@@ -24,5 +24,4 @@ nuc9.home.lab
 p3.home.lab
 ```
 # create a self-sign ca key/cert
-# prepare sn-license.txt
 # run ansible-playbooks
